@@ -92,6 +92,17 @@ tr.next td{ color:var(--gold); }
 .qdate{ font-size:8.5px; color:var(--text-faint); text-transform:none; letter-spacing:0; margin-top:2px; font-weight:400; }
 td:has(.qchg){ font-size:12.5px; font-weight:600; }
 .sub-title{ font-family:var(--mono); font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; margin:14px 0 6px; }
+th.yoy, td.yoy{ border-left:1px solid #3a4150; background:rgba(111,157,250,.05); }
+th.yoy{ color:var(--tech); }
+td.yoy .yoyv{ font-size:14px; font-weight:700; }
+
+/* track record: drop-down detail rows */
+td.lbl.xp{ cursor:pointer; user-select:none; }
+td.lbl.xp:hover{ color:var(--text); }
+td.lbl.xp:focus-visible{ outline:1px solid var(--tech); outline-offset:-2px; }
+.caret{ display:inline-block; width:13px; color:var(--tech); }
+tr.detail td{ background:rgba(111,157,250,.04); font-size:12px; font-weight:500; }
+tr.detail td.lbl{ padding-left:21px; color:var(--text-faint); }
 
 .assume-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:10px; }
 .assume{ background:var(--surface-2); border:1px solid var(--hair); border-radius:6px; padding:8px 10px; }
@@ -145,17 +156,19 @@ svg text{ font-family:var(--mono); }
 
   <!-- EARNINGS -->
   <div class="box">
-    <div class="box-title">Recent earnings <em id="earnSub">· estimates vs actuals · report dates &amp; timing · quarter-on-quarter shift</em></div>
-    <div class="note" id="earnSummary">Press Build DCF — one card per recent report (consensus vs actual for revenue and EPS, beat or miss and by how much), the next scheduled report, and the quarter-on-quarter revenue and EPS shift will appear here.</div>
+    <div class="box-title">Recent earnings <em id="earnSub">· estimates vs actuals · report dates &amp; timing · quarter-on-quarter shift · YoY change &amp; FCF</em></div>
+    <div class="note" id="earnSummary">Press Build DCF — one card per recent report (consensus vs actual for revenue and EPS, beat or miss and by how much), the next scheduled report, the quarter-on-quarter revenue, EPS and FCF shift, and the YoY % change (earliest quarter shown vs the latest release) will appear here.</div>
     <div class="table-scroll" id="earnTable"></div>
     <div class="table-scroll" id="qtrTable"></div>
-    <div class="note" id="earnNote" style="margin-top:8px;display:none;">Source: FMP Earnings Report endpoint (Free plan), one call capped at 5 rows — the next scheduled report uses one of those rows, so you usually see the last 4 reported quarters. Surprise = actual − consensus estimate on file; positive is a beat, negative a miss. Quarter-on-quarter (QoQ) compares each reported quarter with the one before it, reading left to right; bear in mind seasonality — a soft quarter after a peak one is normal for many businesses. Guidance changes (a "raise" or "cut") are not in the feed — check the release.</div>
+    <div class="note" id="earnNote" style="margin-top:8px;display:none;">Source: FMP Earnings Report endpoint (Free plan), one call capped at 5 rows — the next scheduled report uses one of those rows, so you usually see the last 4 reported quarters. Surprise = actual − consensus estimate on file; positive is a beat, negative a miss. Quarter-on-quarter (QoQ) compares each reported quarter with the one before it, reading left to right; bear in mind seasonality — a soft quarter after a peak one is normal for many businesses. YoY (right-hand column) is the % change from the earliest quarter in the table to the latest release, for revenue, EPS and FCF — with 4 quarters shown that spans 3 quarters (about 9 months), with 5 it is a full 12 months. FCF = operating cash flow − capex, from FMP's quarterly cash-flow statement, matched to each report by quarter-end date; that endpoint is not in the Free plan, so on Free the FCF row shows n/a. Guidance changes (a "raise" or "cut") are not in the feed — check the release.</div>
     <div class="error" id="earnError"></div>
   </div>
 
   <!-- HISTORY -->
   <div class="box">
-    <div class="box-title">Five-year track record <em id="histSub">· fetches income statement, balance sheet, cash flow, profile &amp; quote from FMP</em></div>
+    <div class="box-title">Five-year track record <em id="histSub">· fetches income statement, balance sheet, cash flow, profile &amp; quote from FMP</em>
+      <span style="float:right"><button id="histXpAll" onclick="toggleHistAll()">▸ Expand EBIT · D&amp;A · Capex · ΔNWC</button></span>
+    </div>
     <div class="table-scroll" id="histTable"><div class="note">The model calibrates itself to the company's own history: revenue trajectory, operating margin, capex intensity and working-capital intensity are measured over the last five fiscal years, then faded toward steady state over the forecast. No line-item guessing — every driver is a ratio of revenue.</div></div>
     <div class="audit" id="auditLine"></div>
     <div class="error" id="histError"></div>
@@ -279,6 +292,7 @@ async function tryUrls(urls, pick){
 const H = { ticker:"MSFT", name:"Microsoft Corporation (sample)", years:[], loaded:false, audit:null, currencyWarn:"", earnings:null };
 let scenario = "base";
 let baseSnapshot = null;   // driver values for scenario deltas
+const histOpen = { ebit:false, da:false, capex:false, nwc:false };   // which track-record rows are dropped down (kept across recalcs)
 
 /* MSFT view locked in per Q2-earnings read — applied on top of auto-calibration.
    Yr-1 capex: FY25 capex $64.6B ×1.25 = $80.75B ÷ Yr-1 revenue ($281.7B×1.17) = 24.5% of rev. */
@@ -432,11 +446,18 @@ async function buildDCF(){
    in the Free plan and returns estimates + actuals per quarter. It is capped at 5 rows per
    call, so we take the 5 most recent rows (any upcoming report counts against the 5) and
    derive the quarterly revenue / EPS shift from the reported actuals — no quarterly
-   income-statement call, which is not in the Free plan. */
+   income-statement call, which is not in the Free plan.
+   Quarterly FCF needs ONE more call, to the quarterly cash-flow statement (run in parallel).
+   That endpoint is NOT in the Free plan — on Free it returns 402 and the FCF row shows n/a;
+   revenue / EPS are unaffected. */
 const EARN_LIMIT = 5;
 async function loadEarnings(tk, k){
-  const E = { ticker: tk, reports: [], quarters: [], err: "" };
+  const E = { ticker: tk, reports: [], quarters: [], err: "", fcfErr: "" };
   const pickArr = d => Array.isArray(d) && d.length ? d : null;
+  const cfPromise = tryUrls([
+    `https://financialmodelingprep.com/stable/cash-flow-statement?symbol=${tk}&period=quarter&limit=6&apikey=${k}`,
+    `https://financialmodelingprep.com/api/v3/cash-flow-statement/${tk}?period=quarter&limit=6&apikey=${k}`
+  ], pickArr).catch(e => { E.fcfErr = e.message; return []; });
   try{
     const raw = await tryUrls([
       `https://financialmodelingprep.com/stable/earnings?symbol=${tk}&limit=${EARN_LIMIT}&apikey=${k}`,
@@ -460,18 +481,37 @@ async function loadEarnings(tk, k){
     };
     E.quarters = E.reports
       .filter(r => r.revA != null || r.epsA != null)
-      .map(r => ({ date: r.date, fiscalEnd: r.fiscalEnd, label: qLabel(r), revenue: r.revA, eps: r.epsA }));
+      .map(r => ({ date: r.date, fiscalEnd: r.fiscalEnd, label: qLabel(r), revenue: r.revA, eps: r.epsA, fcf: null }));
   }catch(e){
     E.err += "Earnings report unavailable (" + e.message + "). On the Free plan this endpoint covers only a limited set of large-cap tickers — " + tk + " may not be one of them.";
   }
+  // FCF per quarter = operating cash flow − capex, matched to each report by its quarter-end date
+  const cfRows = (await cfPromise).map(c => {
+    const ocf = asNumber(c.operatingCashFlow), cx = asNumber(c.capitalExpenditure);
+    return { end: String(c.date).slice(0,10), fcf: asNumber(c.freeCashFlow) ?? (ocf != null ? ocf - Math.abs(cx ?? 0) : null) };
+  }).filter(c => c.fcf != null);
+  for (const q of E.quarters) q.fcf = matchQuarterFcf(q, cfRows);
   H.earnings = E;
+}
+/* the cash-flow quarter behind an earnings report: the quarter-end within ±10 days of the feed's
+   fiscal end when it gives one, else the latest quarter-end 0–100 days before the report date
+   (results land ~3–8 weeks after quarter-end; the quarter before that is ~91 days further back) */
+function matchQuarterFcf(q, rows){
+  const days = (a,b) => (Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z"))/864e5;
+  let best = null, bestGap = Infinity;
+  for (const r of rows){
+    const gap = q.fiscalEnd ? Math.abs(days(q.fiscalEnd, r.end)) : days(q.date, r.end);
+    const ok = q.fiscalEnd ? gap <= 10 : (gap >= 0 && gap <= 100);
+    if (ok && gap < bestGap){ best = r; bestGap = gap; }
+  }
+  return best ? best.fcf : null;
 }
 
 function renderEarnings(){
   const E = H.earnings;
   const sum = $("earnSummary"), et = $("earnTable"), qt = $("qtrTable"), err = $("earnError"), note = $("earnNote");
   if (!E){
-    $("earnSub").textContent = " · estimates vs actuals · report dates & timing · quarter-on-quarter shift";
+    $("earnSub").textContent = " · estimates vs actuals · report dates & timing · quarter-on-quarter shift · YoY change & FCF";
     return;
   }
   $("earnSub").textContent = " · " + E.ticker + (H.loaded && H.ticker === E.ticker ? " · " + H.name : "");
@@ -528,17 +568,30 @@ function renderEarnings(){
   const Q = E.quarters;
   const chg = (a,b) => (a==null || b==null || b<=0) ? null : (a/b-1)*100;
 
-  /* --- table 2: two rows (Revenue, EPS) × one column per reported quarter, oldest → newest,
+  /* --- table 2: three rows (Revenue, EPS, FCF) × one column per reported quarter, oldest → newest,
          each cell showing the figure with its quarter-on-quarter change underneath --- */
   const asc = Q.slice().reverse();                     // oldest first so the shift reads left → right
-  const cell = (val, prev, fmt) => {
+  const cell = (val, prev, fmt, first) => {
     const c = chg(val, prev);
-    return `<td><div>${fmt(val)}</div><div class="qchg ${sign(c)}">${prev == null ? "base" : c == null ? "n/m" : fmtPct(c) + " QoQ"}</div></td>`;
+    const sub = first ? "base" : (val == null || prev == null) ? "n/a" : c == null ? "n/m" : fmtPct(c) + " QoQ";
+    return `<td><div>${fmt(val)}</div><div class="qchg ${sign(c)}">${sub}</div></td>`;
   };
-  const rowFor = (lbl, key, fmt) => `<tr><td class="lbl">${lbl}</td>${asc.map((q,i) => cell(q[key], i ? asc[i-1][key] : null, fmt)).join("")}</tr>`;
-  qt.innerHTML = asc.length >= 2 ? `<div class="sub-title">Quarter-on-quarter shift · reported actuals, oldest → newest</div><table>
-    <thead><tr><th>Metric</th>${asc.map(q => `<th>${q.label}<div class="qdate">${niceDate(q.date)}</div></th>`).join("")}</tr></thead>
-    <tbody>${rowFor("Revenue", "revenue", revS)}${rowFor("EPS", "eps", epsS)}</tbody></table>`
+  /* --- YoY column, right next to the QoQ shifts: the earliest quarter in the table vs the
+         latest release, as a % change, with both figures underneath --- */
+  const earliest = asc[0] || null, latest = asc[asc.length-1] || null, span = asc.length - 1;
+  const yoyHead = asc.length < 2 ? "" : `<th class="yoy">YoY · earliest → latest<div class="qdate">${niceDate(earliest.date)} → ${niceDate(latest.date)} · ${span} qtr${span===1?"":"s"}</div></th>`;
+  const yoyCell = (key, fmt) => {
+    if (asc.length < 2) return "";
+    const a = earliest[key], b = latest[key], c = chg(b, a);
+    return `<td class="yoy"><div class="yoyv ${sign(c)}">${(a == null || b == null) ? "n/a" : c == null ? "n/m" : fmtPct(c)}</div><div class="qchg flat">${fmt(a)} → ${fmt(b)}</div></td>`;
+  };
+  const rowFor = (lbl, key, fmt) => `<tr><td class="lbl">${lbl}</td>${asc.map((q,i) => cell(q[key], i ? asc[i-1][key] : null, fmt, i === 0)).join("")}${yoyCell(key, fmt)}</tr>`;
+  const fcfNote = asc.some(q => q.fcf != null) ? ""
+    : `<div class="note" style="margin-top:6px;">FCF n/a — ${E.fcfErr ? "quarterly cash-flow statement unavailable (" + E.fcfErr + "); FMP's Free plan includes annual statements only." : "no quarterly cash-flow rows matched these report dates."}</div>`;
+  qt.innerHTML = asc.length >= 2 ? `<div class="sub-title">Quarter-on-quarter shift · reported actuals, oldest → newest · YoY = earliest quarter shown vs latest release</div><table>
+    <thead><tr><th>Metric</th>${asc.map(q => `<th>${q.label}<div class="qdate">${niceDate(q.date)}</div></th>`).join("")}${yoyHead}</tr></thead>
+    <tbody>${rowFor("Revenue", "revenue", revS)}${rowFor("EPS", "eps", epsS)}${rowFor("FCF", "fcf", revS)}</tbody></table>
+    ${fcfNote}`
     : asc.length === 1 ? `<div class="note">Only one reported quarter came back within the ${EARN_LIMIT}-row cap, so there is no prior quarter to compare against.</div>` : "";
 }
 
@@ -729,18 +782,52 @@ function renderHistory(){
   const rowsDef = [
     ["Revenue", i=>fmtM(Y[i].revenue)],
     ["Revenue growth", i=>fmtPct(growth(i))],
-    ["EBIT margin", i=>pctPlain(Y[i].ebit/Y[i].revenue*100)],
-    ["D&A % rev", i=>pctPlain((Y[i].da??0)/Y[i].revenue*100)],
-    ["Capex % rev", i=>pctPlain(Y[i].capex/Y[i].revenue*100)],
-    ["NWC % rev", i=>Y[i].nwc==null?"--":pctPlain(Y[i].nwc/Y[i].revenue*100)],
+    ["EBIT margin", i=>pctPlain(Y[i].ebit/Y[i].revenue*100), "ebit"],
+    ["D&A % rev", i=>pctPlain((Y[i].da??0)/Y[i].revenue*100), "da"],
+    ["Capex % rev", i=>pctPlain(Y[i].capex/Y[i].revenue*100), "capex"],
+    ["NWC % rev", i=>Y[i].nwc==null?"--":pctPlain(Y[i].nwc/Y[i].revenue*100), "nwc"],
     ["FCFF", i=>fmtM(fcfHist[i])],
     ["FCFF growth", i=>fcfGrowth(i)==null?"--":fmtPct(fcfGrowth(i))]
   ];
+  // drop-down detail under each ratio: the $ figure behind it, with a % underneath
+  // (y/y change for EBIT, D&A and capex; % of revenue for ΔNWC — the same ΔNWC the FCFF row uses)
+  const yoyOf = (key, i) => (i===0 || Y[i][key]==null || Y[i-1][key]==null || Y[i-1][key]<=0) ? null : (Y[i][key]/Y[i-1][key]-1)*100;
+  const dNwcOf = i => (i>0 && Y[i].nwc!=null && Y[i-1].nwc!=null) ? Y[i].nwc - Y[i-1].nwc : null;
+  const fig = (v, sub) => `<div>${v==null ? "--" : fmtM(v)}</div><div class="qchg flat">${sub}</div>`;
+  const growthSub = (key, i) => { const g = yoyOf(key, i); return i===0 ? "base yr" : g==null ? "n/m" : fmtPct(g) + " y/y"; };
+  const DETAIL = {
+    ebit:  ["EBIT · $", i => fig(Y[i].ebit, growthSub("ebit", i))],
+    da:    ["D&A · $", i => fig(Y[i].da, growthSub("da", i))],
+    capex: ["Capex · $", i => fig(Y[i].capex, growthSub("capex", i))],
+    nwc:   ["ΔNWC · $", i => { const d = dNwcOf(i);
+             return d==null ? fig(null, i===0 ? "no prior yr" : "n/a")
+               : fig(d, pctPlain(d/Y[i].revenue*100) + " of rev · " + (d>0 ? "ties up cash" : d<0 ? "frees cash" : "no change")); }]
+  };
+  const row = (lbl, fn, k) => {
+    const open = !!(k && histOpen[k]);
+    const head = k
+      ? `<td class="lbl xp" data-xp="${k}" role="button" tabindex="0" aria-expanded="${open}" onclick="toggleHist('${k}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHist('${k}')}"><span class="caret">${open ? "▾" : "▸"}</span>${lbl}</td>`
+      : `<td class="lbl">${lbl}</td>`;
+    let html = `<tr>${head}${Y.map((_,i)=>`<td>${fn(i)}</td>`).join("")}</tr>`;
+    if (open){ const [dl, dfn] = DETAIL[k]; html += `<tr class="detail"><td class="lbl">${dl}</td>${Y.map((_,i)=>`<td>${dfn(i)}</td>`).join("")}</tr>`; }
+    return html;
+  };
+  $("histXpAll").textContent = (Object.values(histOpen).every(Boolean) ? "▾ Collapse" : "▸ Expand") + " EBIT · D&A · Capex · ΔNWC";
   $("histTable").innerHTML = `<table>
     <thead><tr><th>Metric</th>${Y.map(y=>`<th>${y.label}</th>`).join("")}</tr></thead>
-    <tbody>${rowsDef.map(([lbl,fn])=>`<tr><td class="lbl">${lbl}</td>${Y.map((_,i)=>`<td>${fn(i)}</td>`).join("")}</tr>`).join("")}</tbody>
+    <tbody>${rowsDef.map(([lbl,fn,k])=>row(lbl,fn,k)).join("")}</tbody>
   </table>`;
   renderAudit();
+}
+function toggleHist(k){
+  histOpen[k] = !histOpen[k];
+  renderHistory();
+  document.querySelector(`[data-xp="${k}"]`)?.focus();   // keep keyboard focus on the row just toggled
+}
+function toggleHistAll(){
+  const v = !Object.values(histOpen).every(Boolean);
+  for (const k in histOpen) histOpen[k] = v;
+  renderHistory();
 }
 
 function renderAudit(){
