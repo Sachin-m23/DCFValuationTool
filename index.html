@@ -109,6 +109,24 @@ tr.detail td.lbl{ padding-left:21px; color:var(--text-faint); }
 .assume label{ display:block; font-family:var(--mono); font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
 .assume .auto{ color:var(--tech); }
 
+/* cost of capital panel */
+.ovr-line{ font-family:var(--mono); font-size:9px; color:var(--text-faint); margin-top:5px; }
+.ovr-line .mini, button.mini{ font-size:9px; padding:1px 6px; color:var(--gold); border-color:#5a4d24; }
+.wacc-build{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:10px; margin-top:12px; }
+.wcard{ background:var(--surface-2); border:1px solid var(--hair); border-radius:6px; padding:10px 12px; }
+.wcard .k{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em; }
+.wcard .v{ font-family:var(--mono); font-size:19px; font-weight:700; margin-top:4px; }
+.wcard .f{ font-family:var(--mono); font-size:10px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
+.wcard.hero{ border-color:#3a4763; background:linear-gradient(180deg, rgba(111,157,250,.10), var(--surface-2)); }
+.wcard.hero.manual{ border-color:#5a4d24; background:linear-gradient(180deg, rgba(224,179,77,.10), var(--surface-2)); }
+.wacc-row{ display:flex; align-items:center; gap:6px; margin-top:4px; flex-wrap:wrap; }
+input.wacc-in{ width:110px; font-size:20px; font-weight:700; color:var(--tech); padding:2px 8px; }
+.wcard.hero.manual input.wacc-in{ color:var(--gold); }
+.wacc-row .pct{ font-family:var(--mono); font-size:16px; font-weight:700; color:var(--text-dim); }
+.chip{ display:inline-block; font-family:var(--mono); font-size:9px; border-radius:4px; padding:1px 6px; margin-left:4px; text-transform:none; letter-spacing:0; }
+.chip.auto{ color:var(--tech); border:1px solid #3a4763; }
+.chip.manual{ color:#0d0f13; background:var(--gold); font-weight:700; }
+
 .kpis{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; }
 .kpi{ background:var(--surface-2); border:1px solid var(--hair); border-radius:6px; padding:10px 12px; }
 .kpi .k{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em; }
@@ -196,16 +214,39 @@ svg text{ font-family:var(--mono); }
       <div class="assume"><label>Capex %rev · Yr N</label><input type="number" id="inCXT" value="14" step="0.5" oninput="recalc()"></div>
       <div class="assume"><label>NWC · % of rev</label><input type="number" id="inNWC" value="-5" step="0.5" oninput="recalc()"></div>
       <div class="assume"><label>Tax rate %</label><input type="number" id="inTax" value="18" step="0.5" oninput="recalc()"></div>
-      <div class="assume"><label>Risk-free %</label><input type="number" id="inRf" value="4.3" step="0.05" oninput="recalc()"></div>
-      <div class="assume"><label>Equity risk premium %</label><input type="number" id="inERP" value="4.7" step="0.1" oninput="recalc()"></div>
-      <div class="assume"><label>Beta</label><input type="number" id="inBeta" value="0.95" step="0.01" oninput="recalc()"></div>
-      <div class="assume"><label>Pre-tax cost of debt %</label><input type="number" id="inKd" value="4.0" step="0.1" oninput="recalc()"></div>
       <div class="assume"><label>Share price $</label><input type="number" id="inPx" value="500" step="0.01" oninput="recalc()"></div>
       <div class="assume"><label>Diluted shares · M</label><input type="number" id="inSh" value="7460" step="1" oninput="recalc()"></div>
       <div class="assume"><label>Total debt · $M</label><input type="number" id="inDebt" value="60000" step="100" oninput="recalc()"></div>
       <div class="assume"><label>Cash &amp; ST inv · $M</label><input type="number" id="inCash" value="90000" step="100" oninput="recalc()"></div>
     </div>
-    <div class="audit" id="calibNote"></div>
+  </div>
+
+  <!-- COST OF CAPITAL -->
+  <div class="box">
+    <div class="box-title">Cost of capital · WACC <em>· adjust any component below, or type over the WACC itself</em></div>
+    <div class="assume-grid">
+      <div class="assume"><label>Risk-free %</label><input type="number" id="inRf" value="4.3" step="0.05" oninput="recalc()"></div>
+      <div class="assume"><label>Beta</label><input type="number" id="inBeta" value="0.95" step="0.01" oninput="recalc()"></div>
+      <div class="assume"><label>Equity risk premium %</label><input type="number" id="inERP" value="4.7" step="0.1" oninput="recalc()"></div>
+      <div class="assume"><label>Extra risk premium %</label><input type="number" id="inPrem" value="0" step="0.25" oninput="recalc()"><div class="ovr-line">size / company-specific</div></div>
+      <div class="assume"><label>Pre-tax cost of debt %</label><input type="number" id="inKd" value="4.0" step="0.1" oninput="recalc()"></div>
+      <div class="assume"><label>Debt weight D/V %</label><input type="number" id="inDV" step="0.5" min="0" max="95" oninput="setOverride('dv', this)" onchange="if(this.value.trim()==='')clearOverride('dv')"><div class="ovr-line" id="dvLine">at market value</div></div>
+    </div>
+    <div class="wacc-build">
+      <div class="wcard"><div class="k">Cost of equity</div><div class="v" id="keV">--</div><div class="f" id="keF"></div></div>
+      <div class="wcard"><div class="k">After-tax cost of debt</div><div class="v" id="kdV">--</div><div class="f" id="kdF"></div></div>
+      <div class="wcard"><div class="k">Weights · equity / debt</div><div class="v" id="wtV">--</div><div class="f" id="wtF"></div></div>
+      <div class="wcard hero" id="waccCard">
+        <div class="k">WACC used in valuation <span class="chip auto" id="waccChip">computed</span></div>
+        <div class="wacc-row">
+          <input type="number" id="inWACC" class="wacc-in" step="0.05" oninput="setOverride('wacc', this)" onchange="if(this.value.trim()==='')clearOverride('wacc')"><span class="pct">%</span>
+          <button id="waccReset" onclick="clearOverride('wacc')" style="display:none">↺ Use computed</button>
+        </div>
+        <div class="f" id="waccF"></div>
+      </div>
+    </div>
+    <div class="error" id="waccWarn"></div>
+    <div class="note" style="margin-top:10px;">Cost of equity is CAPM (risk-free + beta × equity risk premium) plus any extra premium you add for size or company-specific risk. Cost of debt is taken after tax, using the tax-rate driver above. Weights use market values — equity = share price × diluted shares, debt = total debt — unless you type a target D/V. Type over the WACC to use your own figure; ↺ puts it back on the computed build-up. The Bear/Bull buttons shift the equity risk premium by ±0.5pp, which only moves WACC while it is computed. Overrides reset when you build a different ticker.</div>
   </div>
 
   <!-- FORECAST -->
@@ -294,6 +335,17 @@ let scenario = "base";
 let baseSnapshot = null;   // driver values for scenario deltas
 const histOpen = { ebit:false, da:false, capex:false, nwc:false };   // which track-record rows are dropped down (kept across recalcs)
 
+/* WACC overrides: null = follow the computed value; a number (%) = the user's own figure.
+   dv = target debt weight D/V; wacc = the WACC used in the valuation. */
+const OVR = { dv:null, wacc:null };
+function setOverride(k, el){
+  const v = parseFloat(el.value);
+  if (!Number.isFinite(v)) return;            // mid-edit (empty field, lone "-") — wait for a number
+  OVR[k] = k === "dv" ? clamp(v, 0, 95) : v;
+  recalc();
+}
+function clearOverride(k){ OVR[k] = null; recalc(); }
+
 /* MSFT view locked in per Q2-earnings read — applied on top of auto-calibration.
    Yr-1 capex: FY25 capex $64.6B ×1.25 = $80.75B ÷ Yr-1 revenue ($281.7B×1.17) = 24.5% of rev. */
 const USER_SCENARIO = {
@@ -303,7 +355,6 @@ const USER_SCENARIO = {
 function applyUserScenario(){
   if (H.ticker !== "MSFT") return;   // scenario is MSFT-specific; other tickers stay auto-calibrated
   for (const [id, vd] of Object.entries(USER_SCENARIO)) setVal(id, vd[0], vd[1]);
-  $("calibNote").innerHTML += `<div class="warn" style="margin-top:6px;">MSFT scenario applied on top of the auto-calibration — 5-yr horizon · revenue growth 17% (Q2 run-rate) fading only to 15% by Yr 5, perpetuity at 2.5% · Yr-1 capex +25% y/y (= 24.5% of revenue) fading to 5% by Yr 5 · EBIT margin 47% → 50% · cash $76.84B (mrq). Two cautions: the growth step from 15% (Yr 5) to 2.5% (perpetuity) is an overnight cliff — value is very sensitive to that Yr-5 FCF base; and D&amp;A is held at ~12% of revenue vs 5% terminal capex, a generous perpetuity (long-run D&amp;A converges to capex). Edit any driver to move off this scenario.</div>`;
 }
 
 /* Approximate MSFT FY2021–FY2025 ($M) so the model runs before any fetch */
@@ -391,6 +442,7 @@ async function buildDCF(){
 
     if (H.years.length < 3) throw new Error("Fewer than 3 annual periods returned — check ticker or plan.");
 
+    if (tk !== H.ticker){ OVR.dv = null; OVR.wacc = null; }   // WACC overrides are company-specific — clear them for a new ticker
     H.ticker = tk;
     H.name = profile?.companyName || quote.name || tk;
     H.loaded = true;
@@ -665,16 +717,6 @@ function calibrate(){
   const nwcPct = nwcVals.length ? nwcVals[nwcVals.length-1].nwc/last.revenue*100 : 0;
   setVal("inNWC", clamp(nwcPct, -40, 40));
 
-  // narrate what the data said, so the assumptions are auditable at a glance
-  const dir = (t, up, down, flat) => t >= 0.15 ? up : t <= -0.15 ? down : flat;
-  const pp = t => (t>=0 ? "+" : "") + t.toFixed(1) + "pp/yr";
-  const N = Math.round(num("inYears")) || 5;
-  $("calibNote").innerHTML =
-    `History read — EBIT margin <b>${dir(mTrend,"expanding","contracting","stable")}</b> (${pp(mTrend)}) → Yr-N margin set to <b>${num("inMT").toFixed(1)}%</b> vs ${m.toFixed(1)}% today · ` +
-    `capex intensity <b>${dir(cxTrend,"rising","falling","stable")}</b> (${pp(cxTrend)}) → Yr-1 capex <b>${num("inCX1").toFixed(1)}%</b> of revenue, fading to <b>${num("inCXT").toFixed(1)}%</b> (D&amp;A + g×PP&amp;E steady state) · ` +
-    `revenue momentum: last yr <b>${lastG.toFixed(1)}%</b> vs 3y CAGR ${cagr.toFixed(1)}% and ${n-1}y CAGR ${cagrFull.toFixed(1)}% → Yr-1 growth <b>${num("inG1").toFixed(1)}%</b>, slowing along that trajectory to <b>${num("inGN").toFixed(1)}%</b> by Yr ${N} (keeps ~55% of the excess over the ${num("inGT").toFixed(1)}% terminal rate) · perpetuity at ${num("inGT").toFixed(1)}%. ` +
-    `Trends are damped and capped (margin ±3pp, capex +3pp) — override any driver above.`;
-
   // tax: average of the usable effective rates over the window (one year can be distorted
   // by one-off items); falls back to 21 only when nothing usable exists
   const taxes = Y.map(y=>y.taxRate).filter(t => t!=null && t>5 && t<45);
@@ -713,13 +755,18 @@ function runModel(over = {}){
   const nwcP= num("inNWC")/100;
   const tax = num("inTax")/100;
   const rf  = num("inRf")/100, erp = (over.erp ?? num("inERP"))/100, beta = num("inBeta");
-  const kd  = num("inKd")/100 * (1-tax);
+  const prem = num("inPrem")/100;                 // extra (size / company-specific) premium on the cost of equity
+  const kdPre = num("inKd")/100;
+  const kd  = kdPre * (1-tax);
   const px  = num("inPx"), sh = num("inSh");
   const debt= num("inDebt"), cash = num("inCash");
 
-  const coe = rf + beta*erp;
+  const coe = rf + beta*erp + prem;
   const E = px*sh, D = debt, V = E+D;
-  const wacc = over.wacc ?? (V>0 ? coe*(E/V) + kd*(D/V) : coe);
+  const wdMkt = V>0 ? D/V : 0;                    // market-value debt weight
+  const wd = OVR.dv != null ? OVR.dv/100 : wdMkt, we = 1 - wd;
+  const waccCalc = coe*we + kd*wd;                // the build-up
+  const wacc = over.wacc ?? (OVR.wacc != null ? OVR.wacc/100 : waccCalc);   // sensitivity grid → manual override → build-up
 
   // discounting convention: mid-year assumes cash arrives evenly through the year
   // (discount Yr t at t−0.5, TV at N−0.5); year-end assumes it all lands at year end
@@ -760,7 +807,7 @@ function runModel(over = {}){
   const lastHistEbitda = last.ebitda ?? ((last.ebit||0)+(last.da||0));
   const mktExitMultiple = lastHistEbitda>0 ? (E + netDebt)/lastHistEbitda : NaN;
 
-  return { N, rows, coe, kd, wacc, E, D, sumPv, tv, pvTv, impliedExitMultiple, mktExitMultiple, ev, netDebt, eq, perShare, upside, irr, px, sh, gT, tvShare: pvTv/ev };
+  return { N, rows, coe, kd, kdPre, tax, rf, erp, beta, prem, we, wd, wdMkt, waccCalc, wacc, E, D, sumPv, tv, pvTv, impliedExitMultiple, mktExitMultiple, ev, netDebt, eq, perShare, upside, irr, px, sh, gT, tvShare: pvTv/ev };
 }
 
 /* ---------- renderers ---------- */
@@ -861,12 +908,41 @@ function renderForecast(m){
   </table>`;
 }
 
+/* cost-of-capital panel: the build-up, plus the two overridable inputs. Inputs are only
+   written while they follow the computed value, so typing in them is never interrupted. */
+function renderWacc(m){
+  const p = (v, dp=2) => pctPlain(v*100, dp);
+  $("keV").textContent = p(m.coe);
+  $("keF").textContent = `${p(m.rf)} risk-free + ${m.beta.toFixed(2)} β × ${p(m.erp)} ERP` + (m.prem ? ` + ${p(m.prem)} extra` : "");
+  $("kdV").textContent = p(m.kd);
+  $("kdF").textContent = `${p(m.kdPre)} pre-tax × (1 − ${p(m.tax,1)} tax)`;
+  $("wtV").textContent = `${p(m.we,1)} / ${p(m.wd,1)}`;
+  $("wtF").textContent = OVR.dv == null
+    ? `market values · equity ${fmtM(m.E)} · debt ${fmtM(m.D)}`
+    : `target D/V you set · market would be ${p(m.wdMkt,1)}`;
+  if (OVR.dv == null) $("inDV").value = (m.wdMkt*100).toFixed(1);
+  $("dvLine").innerHTML = OVR.dv == null ? "at market value"
+    : `target · <button class="mini" onclick="clearOverride('dv')">↺ market ${p(m.wdMkt,1)}</button>`;
+
+  const manual = OVR.wacc != null;
+  if (!manual) $("inWACC").value = (m.waccCalc*100).toFixed(2);
+  $("waccChip").textContent = manual ? "manual" : "computed";
+  $("waccChip").className = "chip " + (manual ? "manual" : "auto");
+  $("waccCard").classList.toggle("manual", manual);
+  $("waccReset").style.display = manual ? "" : "none";
+  $("waccF").textContent = `${p(m.we,1)} × ${p(m.coe)} + ${p(m.wd,1)} × ${p(m.kd)} = ${p(m.waccCalc)}`
+    + (manual ? ` computed — your ${p(m.wacc)} is used instead, so component changes don't move it` : "");
+  $("waccWarn").textContent = m.wacc <= m.gT
+    ? `WACC (${p(m.wacc)}) must be above terminal growth (${p(m.gT)}) — the perpetuity is undefined, so EV and value per share show "--".`
+    : "";
+}
+
 function renderBridge(m){
   const rows = [
     ["Cost of equity (CAPM)", pctPlain(m.coe*100,2)],
     ["After-tax cost of debt", pctPlain(m.kd*100,2)],
-    ["Weights E / D", pctPlain(m.E/(m.E+m.D)*100,1)+" / "+pctPlain(m.D/(m.E+m.D)*100,1)],
-    ["WACC", `<b>${pctPlain(m.wacc*100,2)}</b>`],
+    ["Weights E / D" + (OVR.dv != null ? " (target)" : ""), pctPlain(m.we*100,1)+" / "+pctPlain(m.wd*100,1)],
+    ["WACC" + (OVR.wacc != null ? " (manual)" : ""), `<b>${pctPlain(m.wacc*100,2)}</b>`],
     ["—",""],
     ["PV of forecast FCFF (Yr 1–"+m.N+")", fmtM(m.sumPv)],
     ["PV of terminal value", fmtM(m.pvTv)],
@@ -1019,6 +1095,7 @@ function renderChart(m){
 function recalc(){
   renderHistory();
   const m = runModel();
+  renderWacc(m);
   renderForecast(m);
   renderBridge(m);
   renderSensitivity(m);
