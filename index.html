@@ -217,7 +217,7 @@ svg text{ font-family:var(--mono); }
     <div class="box">
       <div class="box-title" id="pathTitle">Projected price path</div>
       <div class="chart-holder" id="pathChart"></div>
-      <div class="note" style="margin-top:8px;">Today's price compounded to the DCF value per share over the forecast horizon. Solid line = current inputs; dashed lines and shaded band = bear and bull (±3pp growth, ±2pp margin, ∓0.5pp ERP). Dotted line = today's price.</div>
+      <div class="note" style="margin-top:8px;">Today's price compounded to the DCF value per share for the case selected with the Bear / Base / Bull buttons in Model drivers (Base by default). Dotted line = today's price.</div>
     </div>
   </div>
 
@@ -1124,27 +1124,28 @@ function renderValueChart(m){
   $("chartTitle").innerHTML = `Value composition <em>· ${H.ticker} · terminal = ${pctPlain(m.tvShare*100,0)} of EV</em>`;
 }
 
-/* ---------- projected price path: bear / base / bull ---------- */
-function renderPathChart(m, sc){
-  const W=520, Hh=310, padT=30, padB=34, xL=54, gut=128, plotW=W-xL-gut, plotH=Hh-padT-padB;
+/* ---------- projected price path: one line for the selected scenario (Base by default) ---------- */
+/* The Bear / Base / Bull buttons rewrite the drivers, so the current model output IS the selected case. */
+function renderPathChart(m){
+  const W=520, Hh=310, padT=30, padB=34, xL=54, gut=118, plotW=W-xL-gut, plotH=Hh-padT-padB;
   const grid="#222833", axis="#5d6576";
-  const N = m.N;
-  if (!(m.px > 0 && sc.base)){
+  const N = m.N, v = m.perShare;
+  const name = scenario.charAt(0).toUpperCase() + scenario.slice(1);
+  if (!(m.px > 0 && Number.isFinite(v) && v > 0)){
     $("pathChart").innerHTML = `<div class="note" style="padding:40px 0;text-align:center;">Value per share not meaningful with current inputs.</div>`;
-    $("pathTitle").innerHTML = `Projected price path`;
+    $("pathTitle").innerHTML = `Projected price path <em>· ${name} case</em>`;
     return;
   }
-  const all = [m.px, ...Object.values(sc).filter(Boolean)];
-  const yl = Math.min(...all)*0.92, yh = Math.max(...all)*1.06;
-  const YR = v => padT + plotH*(1-(v-yl)/(yh-yl));
+  const yl = Math.min(m.px, v)*0.9, yh = Math.max(m.px, v)*1.06;
+  const YR = x => padT + plotH*(1-(x-yl)/(yh-yl));
   const X = t => xL + plotW*t/N;
-  const pts = ps => Array.from({length:N+1}, (_,t) => [X(t), YR(m.px*Math.pow(ps/m.px, t/N))]);
+  const pts = Array.from({length:N+1}, (_,t) => [X(t), YR(m.px*Math.pow(v/m.px, t/N))]);
   const d = arr => arr.map((p,i) => (i?"L":"M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  const baseCol = sc.base >= m.px ? "#4fae7a" : "#d9704f";
+  const col = v >= m.px ? "#4fae7a" : "#d9704f";
   const yFloor = padT + plotH;
 
   let s = `<defs><linearGradient id="pathFill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="${baseCol}" stop-opacity="0.28"/><stop offset="1" stop-color="${baseCol}" stop-opacity="0"/>
+      <stop offset="0" stop-color="${col}" stop-opacity="0.28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/>
     </linearGradient></defs>`;
   niceTicks(yl, yh, 4).forEach(t => {
     s += `<line x1="${xL}" x2="${xL+plotW}" y1="${YR(t).toFixed(1)}" y2="${YR(t).toFixed(1)}" stroke="${grid}"/>
@@ -1154,49 +1155,30 @@ function renderPathChart(m, sc){
     if (N <= 8 || t % 2 === 0 || t === N)
       s += `<text x="${X(t).toFixed(1)}" y="${Hh-padB+16}" text-anchor="middle" font-size="9.5" fill="${axis}">${t===0?"Today":"Yr "+t}</text>`;
 
-  // bear–bull band and area under the base path
-  if (sc.bear && sc.bull)
-    s += `<path d="${d([...pts(sc.bull), ...pts(sc.bear).reverse()])} Z" fill="#6f9dfa" opacity="0.09"/>`;
-  const bp = pts(sc.base);
-  s += `<path d="${d(bp)} L ${X(N).toFixed(1)} ${yFloor} L ${X(0).toFixed(1)} ${yFloor} Z" fill="url(#pathFill)"/>`;
-  // today's price
+  s += `<path d="${d(pts)} L ${X(N).toFixed(1)} ${yFloor} L ${X(0).toFixed(1)} ${yFloor} Z" fill="url(#pathFill)"/>`;
   s += `<line x1="${xL}" x2="${xL+plotW}" y1="${YR(m.px).toFixed(1)}" y2="${YR(m.px).toFixed(1)}" stroke="#8f98a7" stroke-dasharray="2 4" stroke-width="1.2"/>`;
+  s += `<path d="${d(pts)}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round"/>`;
+  pts.slice(1, -1).forEach(p => { s += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.2" fill="${col}"/>`; });
+  s += `<circle cx="${X(N).toFixed(1)}" cy="${YR(v).toFixed(1)}" r="4.5" fill="${col}" stroke="#171b22" stroke-width="1.5"/>
+        <circle cx="${X(0).toFixed(1)}" cy="${YR(m.px).toFixed(1)}" r="4.5" fill="#eceef1" stroke="#171b22" stroke-width="1.5"/>`;
 
-  // end labels in the right gutter, nudged apart
-  const labels = [
-    ...Object.entries(sc).filter(([,v]) => v).map(([k,v]) => ({ k, v, y: YR(v) })),
-    { k:"now", v:m.px, y:YR(m.px) }
-  ].sort((a,b) => a.y-b.y);
-  for (let i=1; i<labels.length; i++) if (labels[i].y - labels[i-1].y < 26) labels[i].y = labels[i-1].y + 26;
-  const over = labels[labels.length-1].y - (yFloor - 4);
-  if (over > 0) labels.forEach(l => l.y -= over);
-
-  for (const k of ["bear","bull","base"]){
-    const ps = sc[k]; if (!ps) continue;
-    const col = ps >= m.px ? "#4fae7a" : "#d9704f";
-    const base = k === "base";
-    s += `<path d="${d(pts(ps))}" fill="none" stroke="${col}" stroke-width="${base ? 2.6 : 1.4}" ${base ? "" : 'stroke-dasharray="5 4"'} opacity="${base ? 1 : 0.8}" stroke-linecap="round"/>
-          <circle cx="${X(N).toFixed(1)}" cy="${YR(ps).toFixed(1)}" r="${base ? 4.5 : 3}" fill="${col}" stroke="#171b22" stroke-width="1.5"/>`;
-  }
-  if (N >= 2) bp.slice(1, -1).forEach(p => { s += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.2" fill="${baseCol}"/>`; });
-  s += `<circle cx="${X(0).toFixed(1)}" cy="${YR(m.px).toFixed(1)}" r="4.5" fill="#eceef1" stroke="#171b22" stroke-width="1.5"/>`;
-
+  // right-gutter labels for the end value and today's price, kept apart
+  const labels = [{ k:"end", y:YR(v) }, { k:"now", y:YR(m.px) }].sort((a,b) => a.y-b.y);
+  if (labels[1].y - labels[0].y < 28) labels[1].y = labels[0].y + 28;
+  const over = labels[1].y - (yFloor - 4); if (over > 0) labels.forEach(l => l.y -= over);
   const gx = xL + plotW + 12;
   labels.forEach(l => {
     if (l.k === "now"){
       s += `<text x="${gx}" y="${(l.y-1).toFixed(1)}" font-size="9" fill="${axis}">TODAY</text>
             <text x="${gx}" y="${(l.y+11).toFixed(1)}" font-size="10.5" fill="#8f98a7">${fmtMoney(m.px,0)}</text>`;
-      return;
+    } else {
+      s += `<text x="${gx}" y="${(l.y-1).toFixed(1)}" font-size="9" fill="${axis}">${name.toUpperCase()} · YR ${N}</text>
+            <text x="${gx}" y="${(l.y+12).toFixed(1)}" font-size="12.5" font-weight="700" fill="${col}">${fmtMoney(v,0)} <tspan font-size="9.5" font-weight="500">${fmtPct((v/m.px-1)*100,0)}</tspan></text>`;
     }
-    const col = l.v >= m.px ? "#4fae7a" : "#d9704f";
-    const base = l.k === "base";
-    s += `<line x1="${(X(N)+5).toFixed(1)}" x2="${gx-3}" y1="${YR(l.v).toFixed(1)}" y2="${(l.y+4).toFixed(1)}" stroke="${col}" stroke-opacity="0.35"/>
-          <text x="${gx}" y="${(l.y-1).toFixed(1)}" font-size="9" fill="${axis}">${l.k.toUpperCase()}</text>
-          <text x="${gx}" y="${(l.y+11).toFixed(1)}" font-size="${base ? 12 : 10.5}" font-weight="${base ? 700 : 500}" fill="${col}">${fmtMoney(l.v,0)} <tspan font-size="9.5" font-weight="500">${fmtPct((l.v/m.px-1)*100,0)}</tspan></text>`;
   });
 
   $("pathChart").innerHTML = `<svg viewBox="0 0 ${W} ${Hh}" width="100%" style="min-width:420px">${s}</svg>`;
-  $("pathTitle").innerHTML = `Projected price path <em>· base implies ${Number.isFinite(m.irr) ? fmtPct(m.irr*100) : "--"} a year over ${N}y</em>`;
+  $("pathTitle").innerHTML = `Projected price path <em>· ${name} case · ${Number.isFinite(m.irr) ? fmtPct(m.irr*100) : "--"} a year over ${N}y</em>`;
 }
 
 /* ---------- recalc ---------- */
@@ -1208,7 +1190,7 @@ function recalc(){
   renderWacc(m);
   renderVerdict(m, sc, S);
   renderValueChart(m);
-  renderPathChart(m, sc);
+  renderPathChart(m);
   renderForecast(m);
   renderBridge(m);
   renderSensitivity(m, S);
